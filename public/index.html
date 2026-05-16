@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gemini Chat</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ["DM Sans", "sans-serif"],
+            mono: ["DM Mono", "monospace"],
+          },
+          colors: {
+            surface: {
+              50:  "#f9f8f6",
+              100: "#f0ede8",
+              200: "#e2ddd6",
+              300: "#cdc5ba",
+              400: "#b5a99a",
+              500: "#9d8d7b",
+              600: "#8a7868",
+              700: "#72625a",
+              800: "#5f524c",
+              900: "#4e4440",
+            },
+            ink: "#1c1917",
+            accent: "#c84b31",
+            "accent-light": "#f0d5cd",
+          },
+          keyframes: {
+            "fade-up": {
+              "0%":   { opacity: "0", transform: "translateY(10px)" },
+              "100%": { opacity: "1", transform: "translateY(0)" },
+            },
+            "blink": {
+              "0%, 100%": { opacity: "1" },
+              "50%":       { opacity: "0" },
+            },
+          },
+          animation: {
+            "fade-up": "fade-up 0.3s ease forwards",
+            "blink":   "blink 1s step-end infinite",
+          },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+
+    body {
+      font-family: "DM Sans", sans-serif;
+      background-color: #f9f8f6;
+      color: #1c1917;
+    }
+
+    /* Scrollbar */
+    #messages::-webkit-scrollbar        { width: 4px; }
+    #messages::-webkit-scrollbar-track  { background: transparent; }
+    #messages::-webkit-scrollbar-thumb  { background: #cdc5ba; border-radius: 2px; }
+
+    /* Textarea auto-resize handled via JS */
+    #input-box {
+      resize: none;
+      overflow: hidden;
+      min-height: 44px;
+      max-height: 160px;
+      overflow-y: auto;
+      line-height: 1.5;
+    }
+
+    .bubble-user {
+      background-color: #1c1917;
+      color: #f9f8f6;
+      border-radius: 18px 18px 4px 18px;
+    }
+    .bubble-ai {
+      background-color: #ffffff;
+      color: #1c1917;
+      border-radius: 18px 18px 18px 4px;
+      border: 1px solid #e2ddd6;
+    }
+
+    /* Typing indicator dots */
+    .dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: #b5a99a;
+      animation: bounce 1.2s infinite ease-in-out;
+    }
+    .dot:nth-child(2) { animation-delay: 0.2s; }
+    .dot:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes bounce {
+      0%, 80%, 100% { transform: translateY(0); }
+      40%            { transform: translateY(-6px); }
+    }
+
+    /* Code blocks inside AI messages */
+    .ai-content pre {
+      background: #f0ede8;
+      border: 1px solid #e2ddd6;
+      border-radius: 8px;
+      padding: 14px 16px;
+      overflow-x: auto;
+      font-family: "DM Mono", monospace;
+      font-size: 13px;
+      margin: 10px 0;
+      line-height: 1.6;
+    }
+    .ai-content code {
+      font-family: "DM Mono", monospace;
+      font-size: 13px;
+      background: #f0ede8;
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+    .ai-content pre code {
+      background: none;
+      padding: 0;
+    }
+    .ai-content p  { margin: 0 0 8px; line-height: 1.65; }
+    .ai-content p:last-child { margin-bottom: 0; }
+    .ai-content ul, .ai-content ol { padding-left: 20px; margin: 6px 0; }
+    .ai-content li { margin-bottom: 4px; line-height: 1.6; }
+    .ai-content strong { font-weight: 600; }
+
+    textarea:focus { outline: none; }
+
+    .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .grain {
+      position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      opacity: 0.4;
+    }
+  </style>
+</head>
+
+<body class="flex flex-col h-full">
+  <div class="grain"></div>
+
+  <!-- Header -->
+  <header class="relative z-10 flex items-center justify-between px-6 py-4 border-b border-surface-200 bg-surface-50/80 backdrop-blur-sm">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg bg-accent flex items-center justify-center flex-shrink-0">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#f9f8f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div>
+        <h1 class="font-medium text-ink text-sm leading-tight tracking-tight">Gemini Chat</h1>
+        <p class="text-surface-500 text-xs font-mono">gemini-2.0-flash</p>
+      </div>
+    </div>
+    <button
+      id="clear-btn"
+      class="text-xs text-surface-400 hover:text-accent transition-colors duration-150 font-mono px-3 py-1.5 rounded-md hover:bg-accent-light"
+    >
+      clear
+    </button>
+  </header>
+
+  <!-- Messages -->
+  <main id="messages" class="relative z-10 flex-1 overflow-y-auto px-4 py-6 flex flex-col gap-5">
+    <!-- Welcome state -->
+    <div id="welcome" class="flex flex-col items-center justify-center h-full text-center gap-3 animate-fade-up">
+      <div class="w-14 h-14 rounded-2xl bg-white border border-surface-200 flex items-center justify-center shadow-sm">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#c84b31" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div>
+        <p class="text-ink font-medium text-base">Ask me anything</p>
+        <p class="text-surface-400 text-sm mt-1">Powered by Google Gemini</p>
+      </div>
+    </div>
+  </main>
+
+  <!-- Input area -->
+  <footer class="relative z-10 border-t border-surface-200 bg-surface-50/80 backdrop-blur-sm px-4 py-4">
+    <div class="max-w-3xl mx-auto">
+      <div class="flex items-end gap-3 bg-white border border-surface-200 rounded-2xl px-4 py-3 shadow-sm focus-within:border-surface-400 transition-colors duration-200">
+        <textarea
+          id="input-box"
+          rows="1"
+          placeholder="Ask something..."
+          class="flex-1 bg-transparent text-sm text-ink placeholder:text-surface-400 font-sans"
+        ></textarea>
+        <button
+          id="send-btn"
+          class="send-btn flex-shrink-0 w-9 h-9 rounded-xl bg-ink text-surface-50 flex items-center justify-center hover:bg-accent transition-colors duration-200 mb-0.5"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+            <path d="M22 2L11 13M22 2L15 22 11 13 2 9l20-7z" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
+      <p class="text-center text-xs text-surface-400 mt-2 font-mono">Enter to send &nbsp;&middot;&nbsp; Shift+Enter for new line</p>
+    </div>
+  </footer>
+
+  <script>
+    const messagesEl = document.getElementById("messages");
+    const inputBox    = document.getElementById("input-box");
+    const sendBtn     = document.getElementById("send-btn");
+    const clearBtn    = document.getElementById("clear-btn");
+    const welcome     = document.getElementById("welcome");
+
+    // Conversation history for multi-turn context
+    let history = [];
+    let isLoading = false;
+
+    // Auto-resize textarea
+    inputBox.addEventListener("input", () => {
+      inputBox.style.height = "auto";
+      inputBox.style.height = Math.min(inputBox.scrollHeight, 160) + "px";
+    });
+
+    // Send on Enter, newline on Shift+Enter
+    inputBox.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        send();
+      }
+    });
+
+    sendBtn.addEventListener("click", send);
+    clearBtn.addEventListener("click", clearChat);
+
+    function clearChat() {
+      history = [];
+      // Remove all bubbles but keep welcome
+      const bubbles = messagesEl.querySelectorAll(".message-row");
+      bubbles.forEach((b) => b.remove());
+      welcome.style.display = "flex";
+    }
+
+    function scrollToBottom() {
+      messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: "smooth" });
+    }
+
+    function appendMessage(role, text) {
+      if (welcome.style.display !== "none") {
+        welcome.style.display = "none";
+      }
+
+      const row = document.createElement("div");
+      row.className = `message-row flex ${role === "user" ? "justify-end" : "justify-start"} animate-fade-up`;
+
+      const bubble = document.createElement("div");
+      bubble.className = `max-w-[75%] px-4 py-3 text-sm leading-relaxed ${
+        role === "user" ? "bubble-user" : "bubble-ai ai-content"
+      }`;
+
+      if (role === "user") {
+        bubble.textContent = text;
+      } else {
+        bubble.innerHTML = renderMarkdown(text);
+      }
+
+      row.appendChild(bubble);
+      messagesEl.appendChild(row);
+      scrollToBottom();
+      return bubble;
+    }
+
+    function appendTypingIndicator() {
+      if (welcome.style.display !== "none") welcome.style.display = "none";
+
+      const row = document.createElement("div");
+      row.className = "message-row flex justify-start animate-fade-up";
+      row.id = "typing-indicator";
+
+      const bubble = document.createElement("div");
+      bubble.className = "bubble-ai px-4 py-3 flex items-center gap-1.5";
+      bubble.innerHTML = `<span class="dot"></span><span class="dot"></span><span class="dot"></span>`;
+
+      row.appendChild(bubble);
+      messagesEl.appendChild(row);
+      scrollToBottom();
+    }
+
+    function removeTypingIndicator() {
+      const el = document.getElementById("typing-indicator");
+      if (el) el.remove();
+    }
+
+    function setLoading(val) {
+      isLoading = val;
+      sendBtn.disabled = val;
+      inputBox.disabled = val;
+    }
+
+    async function send() {
+      const message = inputBox.value.trim();
+      if (!message || isLoading) return;
+
+      inputBox.value = "";
+      inputBox.style.height = "auto";
+      setLoading(true);
+
+      appendMessage("user", message);
+      appendTypingIndicator();
+
+      try {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message, history }),
+        });
+
+        const data = await res.json();
+        removeTypingIndicator();
+
+        if (!res.ok || data.error) {
+          appendMessage("model", data.error || "Something went wrong. Please try again.");
+        } else {
+          appendMessage("model", data.reply);
+          // Update history for context
+          history.push({ role: "user",  text: message });
+          history.push({ role: "model", text: data.reply });
+        }
+      } catch (err) {
+        removeTypingIndicator();
+        appendMessage("model", "Network error. Make sure the server is running.");
+      }
+
+      setLoading(false);
+      inputBox.focus();
+    }
+
+    // Minimal markdown renderer (bold, italic, code, headers, lists)
+    function renderMarkdown(text) {
+      // Escape HTML first
+      let html = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+
+      // Code blocks
+      html = html.replace(/```[\w]*\n?([\s\S]*?)```/g, (_, code) => {
+        return `<pre><code>${code.trimEnd()}</code></pre>`;
+      });
+
+      // Inline code
+      html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+
+      // Bold
+      html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+
+      // Italic
+      html = html.replace(/\*(.+?)\*/g, "<em>$1</em>");
+
+      // Headers
+      html = html.replace(/^### (.+)$/gm, "<strong>$1</strong>");
+      html = html.replace(/^## (.+)$/gm,  "<strong>$1</strong>");
+      html = html.replace(/^# (.+)$/gm,   "<strong>$1</strong>");
+
+      // Unordered list items
+      html = html.replace(/^\s*[-*] (.+)$/gm, "<li>$1</li>");
+      html = html.replace(/(<li>.*<\/li>)/s, "<ul>$1</ul>");
+
+      // Paragraphs — split on double newlines
+      html = html
+        .split(/\n{2,}/)
+        .map((block) => {
+          if (block.startsWith("<pre") || block.startsWith("<ul") || block.startsWith("<ol")) {
+            return block;
+          }
+          return `<p>${block.replace(/\n/g, "<br>")}</p>`;
+        })
+        .join("");
+
+      return html;
+    }
+
+    // Focus input on load
+    inputBox.focus();
+  </script>
+</body>
+</html>
